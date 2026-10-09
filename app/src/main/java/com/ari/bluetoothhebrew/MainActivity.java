@@ -479,7 +479,7 @@ public class MainActivity extends Activity {
     private int dp(int value){return (int)(value*getResources().getDisplayMetrics().density+0.5f);}
     @Override public void onBackPressed(){if(!"home".equals(currentPage))showPage("home");else super.onBackPressed();}
     @Override protected void onDestroy(){
-        if(adapter!=null&&hasPermissions()){try{if(adapter.isDiscovering())adapter.cancelDiscovery();}catch(Exception ignored){}}
+        if(adapter!=null&&hasPermissions()){try{if(adapter.isDiscovering())adapter.cancelDiscovery();}catch(SecurityException ignored){}}
         if(receiverRegistered){try{unregisterReceiver(bluetoothReceiver);}catch(Exception ignored){}}
         super.onDestroy();
     }
