@@ -1,5 +1,9 @@
 name: Android APK
 
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: ["main"]
@@ -36,7 +40,7 @@ jobs:
         run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
 
       - name: Build debug APK
-        run: gradle --no-daemon assembleDebug --stacktrace
+        run: gradle --no-daemon lintDebug testDebugUnitTest assembleDebug --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
