@@ -18,6 +18,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.location.LocationManager;
+import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -35,7 +36,7 @@ import java.util.Map;
 import java.util.Set;
 
 public class MainActivity extends Activity {
-    private static final int REQ_PERMISSIONS = 210, REQ_ENABLE_BT = 211, REQ_FILE = 212;
+    private static final int REQ_PERMISSIONS = 210, REQ_ENABLE_BT = 211, REQ_FILE = 212, REQ_AUDIO = 213;
     private static final int NAVY = Color.rgb(20,39,77), BLUE = Color.rgb(39,103,232);
     private static final int BG = Color.rgb(245,247,252), TEXT = Color.rgb(35,48,72), MUTED = Color.rgb(105,119,143);
     private BluetoothAdapter adapter;
@@ -44,9 +45,11 @@ public class MainActivity extends Activity {
     private final Handler scanHandler = new Handler(Looper.getMainLooper());
     private final Runnable scanTimeout = () -> finishScan();
     private LinearLayout deviceList;
-    private TextView statusHome, statusDevices, count, incomingShareText;
+    private TextView statusHome, statusDevices, count, incomingShareText, musicTitle, musicStatus;
+    private MediaPlayer mediaPlayer;
+    private Uri selectedAudioUri;
     private FrameLayout pageHost;
-    private View homePage, devicesPage, sharePage, settingsPage;
+    private View homePage, devicesPage, sharePage, settingsPage, musicPage;
     private final Map<String,BluetoothDevice> devices = new LinkedHashMap<>();
     private boolean receiverRegistered = false;
     private String currentPage = "home";
@@ -101,10 +104,12 @@ public class MainActivity extends Activity {
         devicesPage = makeDevicesPage();
         sharePage = makeSharePage();
         settingsPage = makeSettingsPage();
+        musicPage = makeMusicPage();
         pageHost.addView(homePage);
         pageHost.addView(devicesPage);
         pageHost.addView(sharePage);
         pageHost.addView(settingsPage);
+        pageHost.addView(musicPage);
         LinearLayout nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
         nav.setGravity(Gravity.CENTER);
@@ -113,6 +118,7 @@ public class MainActivity extends Activity {
         nav.setElevation(dp(8));
         addNavItem(nav,"⌂","ראשי","home");
         addNavItem(nav,"⌁","מכשירים","devices");
+        addNavItem(nav,"♫","מוזיקה","music");
         addNavItem(nav,"⇧","שיתוף","share");
         addNavItem(nav,"⚙","הגדרות","settings");
         shell.addView(nav,new LinearLayout.LayoutParams(-1,dp(66)));
@@ -141,6 +147,7 @@ public class MainActivity extends Activity {
         TextView heading=text("קיצורי דרך",18,NAVY,true); heading.setPadding(0,dp(22),0,dp(10)); root.addView(heading);
         addAction(root,"⌁","המכשירים שלי","מכשירים משויכים וסריקה חדשה",v->showPage("devices"));
         addAction(root,"⇧","שיתוף קבצים","בחר קובץ ופתח את תפריט השיתוף",v->showPage("share"));
+        addAction(root,"♫","נגן מוזיקה","בחר שיר ששמור בטלפון והשמע דרך הרמקול או Bluetooth",v->showPage("music"));
         addAction(root,"⚙","הגדרות","הפעלת Bluetooth והגדרות המערכת",v->showPage("settings"));
         TextView note=text("העברת קבצים ושמע תלויה בתמיכת Android והמכשיר השני.",12,MUTED,false);
         note.setGravity(Gravity.CENTER); note.setPadding(dp(8),dp(18),dp(8),0); root.addView(note,matchWrap());
@@ -177,6 +184,96 @@ public class MainActivity extends Activity {
         scroll.addView(root); return scroll;
     }
 
+    private View makeMusicPage() {
+        ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(BG);
+        LinearLayout root=pageColumn(); root.addView(pageTitle("נגן מוזיקה","השמעת שירים ששמורים בטלפון"));
+        LinearLayout player=cardColumn(); LinearLayout.LayoutParams pp=matchWrap(); pp.topMargin=dp(18); root.addView(player,pp);
+        TextView cover=text("♫",54,BLUE,true); cover.setGravity(Gravity.CENTER); cover.setBackground(gradient(new int[]{Color.rgb(226,236,255),Color.rgb(244,247,255)},28));
+        LinearLayout.LayoutParams coverParams=new LinearLayout.LayoutParams(-1,dp(135)); coverParams.bottomMargin=dp(15); player.addView(cover,coverParams);
+        musicTitle=text("לא נבחר שיר",18,NAVY,true); musicTitle.setGravity(Gravity.CENTER); player.addView(musicTitle);
+        musicStatus=text("בחרו שיר מהטלפון כדי להתחיל",13,MUTED,false); musicStatus.setGravity(Gravity.CENTER); musicStatus.setPadding(0,dp(8),0,dp(16)); player.addView(musicStatus);
+        Button choose=button("בחר שיר מהטלפון",false); player.addView(choose,matchWrap()); choose.setOnClickListener(v->chooseAudio());
+        LinearLayout controls=new LinearLayout(this); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER); controls.setPadding(0,dp(12),0,0); player.addView(controls,matchWrap());
+        Button play=button("▶  נגן / השהה",false); controls.addView(play,new LinearLayout.LayoutParams(0,dp(52),1)); play.setOnClickListener(v->togglePlayback());
+        Button stop=button("■  עצור",false); LinearLayout.LayoutParams stopParams=new LinearLayout.LayoutParams(0,dp(52),1); stopParams.rightMargin=dp(8); controls.addView(stop,stopParams); stop.setOnClickListener(v->stopPlayback());
+        LinearLayout route=cardColumn(); LinearLayout.LayoutParams rp=matchWrap(); rp.topMargin=dp(14); root.addView(route,rp);
+        route.addView(text("השמעה דרך Bluetooth",16,NAVY,true));
+        TextView routeText=text("אפשר לשמוע דרך רמקול הטלפון, או לחבר אוזניות/רמקול Bluetooth בהגדרות Android. אם התקן Bluetooth מחובר לשמע, Android ינתב אליו את השיר.",13,MUTED,false);
+        routeText.setPadding(0,dp(7),0,dp(12)); routeText.setLineSpacing(dp(3),1f); route.addView(routeText);
+        Button settings=button("חיבור רמקול / אוזניות Bluetooth",false); route.addView(settings,matchWrap());
+        settings.setOnClickListener(v->{try{startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));}catch(Exception e){setStatus("לא ניתן לפתוח הגדרות Bluetooth");}});
+        TextView note=text("הנגן משמיע קובצי שמע שנמצאים בטלפון. הוא אינו מוריד שירים ואינו כולל שירות מוזיקה מקוון.",12,MUTED,false);
+        note.setPadding(0,dp(16),0,0); root.addView(note,matchWrap());
+        scroll.addView(root); return scroll;
+    }
+
+    private void chooseAudio() {
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("audio/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        try { startActivityForResult(intent,REQ_AUDIO); }
+        catch(Exception e) { if(musicStatus!=null)musicStatus.setText("לא נמצא בורר קובצי שמע במכשיר"); }
+    }
+
+    private void loadAudio(Uri uri) {
+        releasePlayer();
+        selectedAudioUri=uri;
+        try {
+            mediaPlayer=MediaPlayer.create(this,uri);
+            if(mediaPlayer==null) {
+                if(musicStatus!=null)musicStatus.setText("לא ניתן לפתוח את קובץ השמע הזה. נסו שיר אחר.");
+                return;
+            }
+            mediaPlayer.setOnCompletionListener(mp->{if(musicStatus!=null)musicStatus.setText("השיר הסתיים");});
+            String name="השיר נבחר";
+            try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)) {
+                if(cursor!=null&&cursor.moveToFirst()) {
+                    int index=cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if(index>=0)name=cursor.getString(index);
+                }
+            } catch(Exception ignored) { }
+            if(musicTitle!=null)musicTitle.setText(name);
+            if(musicStatus!=null)musicStatus.setText("מוכן להשמעה. לחצו על נגן.");
+            setStatus("נבחר שיר להשמעה");
+        } catch(Exception e) {
+            releasePlayer();
+            if(musicStatus!=null)musicStatus.setText("טעינת השיר נכשלה. נסו קובץ אחר.");
+        }
+    }
+
+    private void togglePlayback() {
+        if(mediaPlayer==null) {
+            if(musicStatus!=null)musicStatus.setText("קודם בחרו שיר מהטלפון.");
+            return;
+        }
+        try {
+            if(mediaPlayer.isPlaying()) {
+                mediaPlayer.pause();
+                if(musicStatus!=null)musicStatus.setText("ההשמעה מושהית");
+            } else {
+                mediaPlayer.start();
+                if(musicStatus!=null)musicStatus.setText("מנגן עכשיו");
+            }
+        } catch(Exception e) {
+            if(musicStatus!=null)musicStatus.setText("לא ניתן לנגן את הקובץ. בחרו שיר אחר.");
+        }
+    }
+
+    private void stopPlayback() {
+        if(mediaPlayer!=null) {
+            try { if(mediaPlayer.isPlaying())mediaPlayer.pause(); mediaPlayer.seekTo(0); }
+            catch(Exception ignored) { }
+        }
+        if(musicStatus!=null&&selectedAudioUri!=null)musicStatus.setText("השיר נעצר בתחילתו");
+    }
+
+    private void releasePlayer() {
+        if(mediaPlayer!=null) {
+            try { mediaPlayer.release(); } catch(Exception ignored) { }
+            mediaPlayer=null;
+        }
+    }
+
     private View makeSettingsPage() {
         ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(BG);
         LinearLayout root=pageColumn(); root.addView(pageTitle("הגדרות","שליטה בהגדרות החיבור"));
@@ -205,6 +302,7 @@ public class MainActivity extends Activity {
         devicesPage.setVisibility("devices".equals(page)?View.VISIBLE:View.GONE);
         sharePage.setVisibility("share".equals(page)?View.VISIBLE:View.GONE);
         settingsPage.setVisibility("settings".equals(page)?View.VISIBLE:View.GONE);
+        musicPage.setVisibility("music".equals(page)?View.VISIBLE:View.GONE);
         for (String key : navItems.keySet()) {
             boolean selected = key.equals(page);
             navItems.get(key).setBackground(round(selected ? Color.rgb(231,239,255) : Color.WHITE,16));
@@ -504,7 +602,9 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data) {
         super.onActivityResult(requestCode,resultCode,data);
-        if(requestCode==REQ_FILE&&resultCode==RESULT_OK&&data!=null&&data.getData()!=null){
+        if(requestCode==REQ_AUDIO&&resultCode==RESULT_OK&&data!=null&&data.getData()!=null){
+            loadAudio(data.getData());
+        } else if(requestCode==REQ_FILE&&resultCode==RESULT_OK&&data!=null&&data.getData()!=null){
             Uri uri=data.getData();
             String mime=getContentResolver().getType(uri);
             String displayName="הקובץ נבחר בהצלחה.";
@@ -554,6 +654,7 @@ public class MainActivity extends Activity {
     @Override protected void onDestroy(){
         scanHandler.removeCallbacks(scanTimeout);
         stopBleScan();
+        releasePlayer();
         if(adapter!=null&&hasPermissions()){try{if(adapter.isDiscovering())adapter.cancelDiscovery();}catch(SecurityException ignored){}}
         if(receiverRegistered){try{unregisterReceiver(bluetoothReceiver);}catch(Exception ignored){}}
         super.onDestroy();
