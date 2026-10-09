@@ -13,3 +13,7 @@
 
 ## בנייה
 GitHub Actions בונה APK מסוג debug בכל push ל-main. קובץ ה-APK נשמר כ-artifact, ובנוסף workflow מנסה לפרסם אותו כקובץ Release להורדה ישירה.
+
+
+## Build troubleshooting
+The Android SDK setup step installs the platform and build tools explicitly before invoking Gradle.
