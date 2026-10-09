@@ -54,9 +54,13 @@ public class MainActivity extends Activity {
                 if (devices.isEmpty()) showEmptyState();
                 setStatus("הסריקה הסתיימה. נמצאו " + devices.size() + " מכשירים.");
             } else if (BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(action)) {
+                int bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE);
                 refreshPairedDevices();
-                setStatus("מצב הצימוד עודכן");
+                if (bondState == BluetoothDevice.BOND_BONDED) setStatus("הצימוד הושלם בהצלחה");
+                else if (bondState == BluetoothDevice.BOND_BONDING) setStatus("מתבצע צימוד…");
+                else setStatus("הצימוד לא הושלם או בוטל");
             } else if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) {
+                refreshPairedDevices();
                 setStatus(adapter != null && safeEnabled() ? "Bluetooth מופעל" : "Bluetooth כבוי");
             }
         }
@@ -249,7 +253,15 @@ public class MainActivity extends Activity {
             LinearLayout card=cardColumn(); LinearLayout.LayoutParams cp=matchWrap(); cp.bottomMargin=dp(8); deviceList.addView(card,cp);
             card.addView(text("◉  "+name,16,TEXT,true));
             TextView details=text(address+"   •   "+state,12,MUTED,false); details.setPadding(0,dp(6),0,dp(8)); card.addView(details);
-            Button pair=button("בקש צימוד",false); pair.setOnClickListener(v->pairDevice(device)); card.addView(pair,matchWrap());
+            boolean alreadyPaired = BluetoothDevice.BOND_BONDED == safeBondState(device);
+            Button pair=button(alreadyPaired ? "פתח הגדרות Bluetooth" : "בקש צימוד",false);
+            pair.setOnClickListener(v->{
+                if (alreadyPaired) {
+                    try { startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); }
+                    catch (Exception e) { setStatus("לא ניתן לפתוח את הגדרות Bluetooth"); }
+                } else pairDevice(device);
+            });
+            card.addView(pair,matchWrap());
             if(count!=null)count.setText(String.valueOf(devices.size()));
         } catch(SecurityException e){setStatus("נדרשת הרשאת Bluetooth כדי לקרוא פרטי מכשיר");}
     }
@@ -257,7 +269,9 @@ public class MainActivity extends Activity {
         IntentFilter filter=new IntentFilter(); filter.addAction(BluetoothDevice.ACTION_FOUND);
         filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED); filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
         filter.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
-        try { if(Build.VERSION.SDK_INT>=33)registerReceiver(bluetoothReceiver,filter,Context.RECEIVER_NOT_EXPORTED); else registerReceiver(bluetoothReceiver,filter); receiverRegistered=true; }
+        // Bluetooth discovery/bond broadcasts can originate from the privileged Bluetooth app,
+        // not only from the Android system UID, so Android 13+ requires an exported receiver.
+        try { if(Build.VERSION.SDK_INT>=33)registerReceiver(bluetoothReceiver,filter,Context.RECEIVER_EXPORTED); else registerReceiver(bluetoothReceiver,filter); receiverRegistered=true; }
         catch(Exception e){setStatus("לא ניתן להאזין לאירועי Bluetooth");}
     }
     private boolean hasPermissions() {
@@ -302,6 +316,11 @@ public class MainActivity extends Activity {
             setStatus("מכשירים משויכים: "+(paired==null?0:paired.size())+". לסריקה לחצו על הכפתור.");
         }catch(SecurityException e){setStatus("אין הרשאה להציג מכשירים משויכים");}
     }
+    private int safeBondState(BluetoothDevice device) {
+        try { return device.getBondState(); }
+        catch (SecurityException e) { return BluetoothDevice.BOND_NONE; }
+    }
+
     private void pairDevice(BluetoothDevice device) {
         if(!hasPermissions()){requestBluetoothPermissions();return;}
         try{if(adapter!=null&&adapter.isDiscovering())adapter.cancelDiscovery();
