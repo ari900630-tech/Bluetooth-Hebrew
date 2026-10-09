@@ -14,6 +14,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -298,6 +299,15 @@ public class MainActivity extends Activity {
         if(!hasPermissions()){requestBluetoothPermissions();return;}
         try{
             if(!adapter.isEnabled()){setStatus("יש להפעיל Bluetooth לפני הסריקה");enableBluetooth();return;}
+            if (Build.VERSION.SDK_INT <= 30) {
+                LocationManager locationManager = (LocationManager)getSystemService(Context.LOCATION_SERVICE);
+                if (locationManager != null && !locationManager.isLocationEnabled()) {
+                    setStatus("ב-Android 11 צריך להפעיל גם שירותי מיקום כדי לסרוק Bluetooth.");
+                    try { startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)); }
+                    catch (Exception ignored) { }
+                    return;
+                }
+            }
             if(adapter.isDiscovering())adapter.cancelDiscovery();
             devices.clear(); deviceList.removeAllViews(); if(count!=null)count.setText("0");
             setStatus("סורק מכשירים… השאירו את המסך פתוח"); adapter.startDiscovery();
