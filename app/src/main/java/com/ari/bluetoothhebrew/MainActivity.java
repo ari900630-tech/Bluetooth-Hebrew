@@ -334,9 +334,11 @@ public class MainActivity extends Activity {
         } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
             java.util.ArrayList<Uri> items = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
             int total = items == null ? 0 : items.size();
-            incomingShareText.setText("התקבלו " + total + " פריטים לשיתוף.\nהעברה בפועל תלויה באפשרויות Android ובתמיכת המכשיר.");
             showPage("share");
+            incomingShareText.setText("התקבלו " + total + " פריטים. פותח את שירות שליחת Bluetooth…");
             setStatus("התקבלו פריטים לשיתוף: " + total);
+            if (items != null && !items.isEmpty()) launchMultipleBluetoothTransfer(items, intent.getType());
+            else setStatus("לא התקבלו קבצים בהודעת השיתוף");
         }
     }
 
