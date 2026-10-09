@@ -34,7 +34,7 @@ public class MainActivity extends Activity {
     private static final int BG = Color.rgb(245,247,252), TEXT = Color.rgb(35,48,72), MUTED = Color.rgb(105,119,143);
     private BluetoothAdapter adapter;
     private LinearLayout deviceList;
-    private TextView statusHome, statusDevices, count;
+    private TextView statusHome, statusDevices, count, incomingShareText;
     private FrameLayout pageHost;
     private View homePage, devicesPage, sharePage, settingsPage;
     private final Map<String,BluetoothDevice> devices = new LinkedHashMap<>();
@@ -63,6 +63,7 @@ public class MainActivity extends Activity {
         BluetoothManager manager = (BluetoothManager)getSystemService(Context.BLUETOOTH_SERVICE);
         adapter = manager == null ? null : manager.getAdapter();
         buildUi();
+        handleIncomingShare(getIntent());
         registerBluetoothReceiver();
         if (adapter == null) setStatus("המכשיר אינו תומך ב-Bluetooth");
         else if (!hasPermissions()) requestBluetoothPermissions();
@@ -147,8 +148,10 @@ public class MainActivity extends Activity {
         LinearLayout card=cardColumn(); LinearLayout.LayoutParams cp=matchWrap(); cp.topMargin=dp(20); root.addView(card,cp);
         TextView icon=text("⇧",42,BLUE,true); icon.setGravity(Gravity.CENTER); card.addView(icon);
         TextView title=text("בחירת קובץ לשיתוף",18,NAVY,true); title.setGravity(Gravity.CENTER); title.setPadding(0,dp(10),0,dp(8)); card.addView(title);
-        TextView desc=text("לאחר בחירת הקובץ ייפתח תפריט השיתוף של Android. אם Bluetooth זמין, בחר אותו ברשימת היעדים.",14,MUTED,false);
+        TextView desc=text("אפשר לפתוח את האפליקציה מכאן, או לבחור בה כיעד שיתוף באפליקציה אחרת. Android יעביר אליה את הפריט שנבחר.",14,MUTED,false);
         desc.setGravity(Gravity.CENTER); desc.setLineSpacing(dp(4),1f); card.addView(desc);
+        incomingShareText=text("עדיין לא התקבל פריט לשיתוף.",13,MUTED,false);
+        incomingShareText.setGravity(Gravity.CENTER); incomingShareText.setPadding(0,dp(14),0,0); card.addView(incomingShareText);
         Button choose=button("בחר קובץ",false); LinearLayout.LayoutParams bp=matchWrap(); bp.topMargin=dp(18); card.addView(choose,bp); choose.setOnClickListener(v->chooseFile());
         TextView note=text("ההעברה מתבצעת דרך אפליקציה נתמכת במכשיר.",12,MUTED,false); note.setPadding(dp(3),dp(18),dp(3),0); root.addView(note,matchWrap());
         scroll.addView(root); return scroll;
@@ -291,6 +294,36 @@ public class MainActivity extends Activity {
         }catch(SecurityException e){setStatus("אין הרשאה לצימוד Bluetooth");}
         catch(Exception e){setStatus("הצימוד נכשל: "+e.getMessage());}
     }
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingShare(intent);
+    }
+
+    private void handleIncomingShare(Intent intent) {
+        if (intent == null || incomingShareText == null) return;
+        String action = intent.getAction();
+        if (Intent.ACTION_SEND.equals(action)) {
+            Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            CharSequence sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+            if (uri != null) {
+                incomingShareText.setText("התקבל פריט לשיתוף מהאפליקציה הקודמת.\nכדי לשלוח אותו למכשיר אחר, השתמשו באפשרות השיתוף של Android.");
+                showPage("share");
+                setStatus("התקבל פריט לשיתוף");
+            } else if (sharedText != null) {
+                incomingShareText.setText("התקבל טקסט לשיתוף:\n" + sharedText);
+                showPage("share");
+                setStatus("התקבל טקסט לשיתוף");
+            }
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+            java.util.ArrayList<Uri> items = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            int total = items == null ? 0 : items.size();
+            incomingShareText.setText("התקבלו " + total + " פריטים לשיתוף.\nהעברה בפועל תלויה באפשרויות Android ובתמיכת המכשיר.");
+            showPage("share");
+            setStatus("התקבלו פריטים לשיתוף: " + total);
+        }
+    }
+
     private void chooseFile() {
         Intent intent=new Intent(Intent.ACTION_GET_CONTENT); intent.setType("*/*"); intent.addCategory(Intent.CATEGORY_OPENABLE);
         try{startActivityForResult(Intent.createChooser(intent,"בחרו קובץ לשיתוף"),REQ_FILE);}
