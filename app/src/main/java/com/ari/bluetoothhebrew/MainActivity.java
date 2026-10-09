@@ -387,7 +387,7 @@ public class MainActivity extends Activity {
         try {
             Intent chooser = Intent.createChooser(send, "שליחה דרך Bluetooth או אפליקציה תומכת");
             chooser.putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, new android.content.ComponentName[] {
-                new android.content.ComponentName(this, "com.ari.bluetoothhebrew.BluetoothShareTarget")
+                new android.content.ComponentName("com.ari.bluetoothhebrew", "com.ari.bluetoothhebrew.BluetoothShareTarget")
             });
             startActivity(chooser);
             if (incomingShareText != null) incomingShareText.setText("בחרו Bluetooth או אפליקציית העברת קבצים בתפריט שנפתח.");
