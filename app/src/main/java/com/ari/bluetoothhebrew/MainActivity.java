@@ -317,13 +317,14 @@ public class MainActivity extends Activity {
             Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
             CharSequence sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
             if (uri != null) {
-                incomingShareText.setText("התקבל פריט לשיתוף מהאפליקציה הקודמת.\nכדי לשלוח אותו למכשיר אחר, השתמשו באפשרות השיתוף של Android.");
                 showPage("share");
-                setStatus("התקבל פריט לשיתוף");
+                setStatus("מעביר את הקובץ לשירות השיתוף של Android…");
+                launchBluetoothTransfer(uri, intent.getType(), null);
             } else if (sharedText != null) {
-                incomingShareText.setText("התקבל טקסט לשיתוף:\n" + sharedText);
                 showPage("share");
+                incomingShareText.setText("התקבל טקסט לשיתוף:\n" + sharedText);
                 setStatus("התקבל טקסט לשיתוף");
+                launchBluetoothTransfer(null, intent.getType(), sharedText);
             }
         } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
             java.util.ArrayList<Uri> items = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
@@ -335,19 +336,67 @@ public class MainActivity extends Activity {
     }
 
     private void chooseFile() {
-        Intent intent=new Intent(Intent.ACTION_GET_CONTENT); intent.setType("*/*"); intent.addCategory(Intent.CATEGORY_OPENABLE);
-        try{startActivityForResult(Intent.createChooser(intent,"בחרו קובץ לשיתוף"),REQ_FILE);}
-        catch(Exception e){setStatus("לא נמצא מנהל קבצים במכשיר");}
+        Intent intent=new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("*/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        try {
+            startActivityForResult(Intent.createChooser(intent,"בחרו קובץ לשליחה"),REQ_FILE);
+        } catch(Exception e) {
+            setStatus("לא נמצא מנהל קבצים במכשיר");
+        }
     }
+
+    private void launchBluetoothTransfer(Uri uri, String mime, CharSequence sharedText) {
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType(mime == null || mime.trim().isEmpty() ? "*/*" : mime);
+        if (uri != null) {
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        }
+        if (sharedText != null) send.putExtra(Intent.EXTRA_TEXT, sharedText);
+
+        // Prefer Android's built-in Bluetooth file-transfer component.
+        Intent bluetoothSend = new Intent(send);
+        bluetoothSend.setPackage("com.android.bluetooth");
+        try {
+            if (getPackageManager().resolveActivity(bluetoothSend, 0) != null) {
+                startActivity(bluetoothSend);
+                if (incomingShareText != null) incomingShareText.setText("הקובץ נבחר. המשיכו במסך Bluetooth של Android ובחרו את המכשיר המקבל.");
+                setStatus("נפתח מסך שליחת Bluetooth");
+                return;
+            }
+        } catch (Exception ignored) { }
+
+        // Fallback for devices using a different Bluetooth sharing component.
+        try {
+            startActivity(Intent.createChooser(send, "שליחה דרך Bluetooth או אפליקציה תומכת"));
+            if (incomingShareText != null) incomingShareText.setText("הקובץ נבחר. בתפריט שנפתח בחרו Bluetooth או אפליקציית שיתוף תומכת.");
+            setStatus("נפתח תפריט שליחת הקובץ");
+        } catch (Exception e) {
+            if (incomingShareText != null) incomingShareText.setText("הקובץ נבחר, אך לא נמצאה אפליקציה לשיתוף. בדקו ש-Bluetooth מופעל.");
+            setStatus("לא נמצאה אפליקציה להעברת קבצים. נסו דרך הגדרות Bluetooth של Android.");
+        }
+    }
+
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data) {
         super.onActivityResult(requestCode,resultCode,data);
         if(requestCode==REQ_FILE&&resultCode==RESULT_OK&&data!=null&&data.getData()!=null){
-            Uri uri=data.getData(); Intent share=new Intent(Intent.ACTION_SEND);
-            String mime=getContentResolver().getType(uri); share.setType(mime==null?"*/*":mime);
-            share.putExtra(Intent.EXTRA_STREAM,uri); share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            try{startActivity(Intent.createChooser(share,"שיתוף קובץ — בחרו Bluetooth אם זמין"));setStatus("נפתח תפריט השיתוף של Android.");}
-            catch(Exception e){setStatus("לא ניתן לפתוח את תפריט השיתוף");}
-        }else if(requestCode==REQ_ENABLE_BT){if(resultCode==RESULT_OK)refreshPairedDevices();else setStatus("Bluetooth לא הופעל");}
+            Uri uri=data.getData();
+            String mime=getContentResolver().getType(uri);
+            String displayName="הקובץ נבחר בהצלחה.";
+            try {
+                android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null);
+                if(cursor!=null) {
+                    if(cursor.moveToFirst()) {
+                        int index=cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                        if(index>=0) displayName="נבחר: "+cursor.getString(index);
+                    }
+                    cursor.close();
+                }
+            } catch(Exception ignored) { }
+            if(incomingShareText!=null) incomingShareText.setText(displayName+"\\nפותח כעת את אפשרות השליחה.");
+            launchBluetoothTransfer(uri,mime,null);
+        } else if(requestCode==REQ_ENABLE_BT){if(resultCode==RESULT_OK)refreshPairedDevices();else setStatus("Bluetooth לא הופעל");}
     }
     private void setStatus(String message) {
         if(statusHome!=null)statusHome.setText(message);
