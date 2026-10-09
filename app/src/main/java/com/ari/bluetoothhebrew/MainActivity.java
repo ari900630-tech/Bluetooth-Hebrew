@@ -316,9 +316,12 @@ public class MainActivity extends Activity {
                     return;
                 }
             }
+            if (adapter.isDiscovering()) {
+                setStatus("הסריקה כבר פועלת. המתינו לסיומה לפני התחלת סריקה נוספת.");
+                return;
+            }
             stopBleScan();
             scanHandler.removeCallbacks(scanTimeout);
-            if(adapter.isDiscovering())adapter.cancelDiscovery();
             devices.clear(); deviceList.removeAllViews(); if(count!=null)count.setText("0");
 
             boolean classicStarted = false;
