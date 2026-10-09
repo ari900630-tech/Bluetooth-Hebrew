@@ -51,7 +51,11 @@ public class MainActivity extends Activity {
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 if (device != null) addDevice(device, "נמצא בסריקה");
             } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
-                setStatus("הסריקה הסתיימה");
+                if (devices.isEmpty()) showEmptyState();
+                setStatus("הסריקה הסתיימה. נמצאו " + devices.size() + " מכשירים.");
+            } else if (BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(action)) {
+                refreshPairedDevices();
+                setStatus("מצב הצימוד עודכן");
             } else if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) {
                 setStatus(adapter != null && safeEnabled() ? "Bluetooth מופעל" : "Bluetooth כבוי");
             }
@@ -252,6 +256,7 @@ public class MainActivity extends Activity {
     private void registerBluetoothReceiver() {
         IntentFilter filter=new IntentFilter(); filter.addAction(BluetoothDevice.ACTION_FOUND);
         filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED); filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+        filter.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
         try { if(Build.VERSION.SDK_INT>=33)registerReceiver(bluetoothReceiver,filter,Context.RECEIVER_NOT_EXPORTED); else registerReceiver(bluetoothReceiver,filter); receiverRegistered=true; }
         catch(Exception e){setStatus("לא ניתן להאזין לאירועי Bluetooth");}
     }
@@ -354,27 +359,42 @@ public class MainActivity extends Activity {
             send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         }
         if (sharedText != null) send.putExtra(Intent.EXTRA_TEXT, sharedText);
+        dispatchBluetoothTransfer(send);
+    }
 
-        // Prefer Android's built-in Bluetooth file-transfer component.
+    private void launchMultipleBluetoothTransfer(java.util.ArrayList<Uri> uris, String mime) {
+        Intent send = new Intent(Intent.ACTION_SEND_MULTIPLE);
+        send.setType(mime == null || mime.trim().isEmpty() ? "*/*" : mime);
+        send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        dispatchBluetoothTransfer(send);
+    }
+
+    private void dispatchBluetoothTransfer(Intent send) {
+        // The Android Bluetooth Object Push component performs the actual transfer.
         Intent bluetoothSend = new Intent(send);
         bluetoothSend.setPackage("com.android.bluetooth");
         try {
             if (getPackageManager().resolveActivity(bluetoothSend, 0) != null) {
                 startActivity(bluetoothSend);
-                if (incomingShareText != null) incomingShareText.setText("הקובץ נבחר. המשיכו במסך Bluetooth של Android ובחרו את המכשיר המקבל.");
-                setStatus("נפתח מסך שליחת Bluetooth");
+                if (incomingShareText != null) incomingShareText.setText("הפריט נמסר לשירות Bluetooth של Android. בחרו מכשיר מקבל ואשרו את השליחה.");
+                setStatus("נפתח שירות שליחת Bluetooth");
                 return;
             }
         } catch (Exception ignored) { }
 
-        // Fallback for devices using a different Bluetooth sharing component.
+        // Exclude this app's own receive target to avoid reopening itself in a chooser loop.
         try {
-            startActivity(Intent.createChooser(send, "שליחה דרך Bluetooth או אפליקציה תומכת"));
-            if (incomingShareText != null) incomingShareText.setText("הקובץ נבחר. בתפריט שנפתח בחרו Bluetooth או אפליקציית שיתוף תומכת.");
+            Intent chooser = Intent.createChooser(send, "שליחה דרך Bluetooth או אפליקציה תומכת");
+            chooser.putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, new android.content.ComponentName[] {
+                new android.content.ComponentName(this, "com.ari.bluetoothhebrew.BluetoothShareTarget")
+            });
+            startActivity(chooser);
+            if (incomingShareText != null) incomingShareText.setText("בחרו Bluetooth או אפליקציית העברת קבצים בתפריט שנפתח.");
             setStatus("נפתח תפריט שליחת הקובץ");
         } catch (Exception e) {
-            if (incomingShareText != null) incomingShareText.setText("הקובץ נבחר, אך לא נמצאה אפליקציה לשיתוף. בדקו ש-Bluetooth מופעל.");
-            setStatus("לא נמצאה אפליקציה להעברת קבצים. נסו דרך הגדרות Bluetooth של Android.");
+            if (incomingShareText != null) incomingShareText.setText("לא נמצאה אפליקציה להעברת הקובץ. פתחו את הגדרות Bluetooth של Android.");
+            setStatus("לא נמצאה אפליקציה להעברת קבצים");
         }
     }
 
