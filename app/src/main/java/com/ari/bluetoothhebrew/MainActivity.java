@@ -5,6 +5,9 @@ import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanResult;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -16,6 +19,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.location.LocationManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
@@ -34,6 +39,10 @@ public class MainActivity extends Activity {
     private static final int NAVY = Color.rgb(20,39,77), BLUE = Color.rgb(39,103,232);
     private static final int BG = Color.rgb(245,247,252), TEXT = Color.rgb(35,48,72), MUTED = Color.rgb(105,119,143);
     private BluetoothAdapter adapter;
+    private BluetoothLeScanner bleScanner;
+    private ScanCallback bleScanCallback;
+    private final Handler scanHandler = new Handler(Looper.getMainLooper());
+    private final Runnable scanTimeout = () -> finishScan();
     private LinearLayout deviceList;
     private TextView statusHome, statusDevices, count, incomingShareText;
     private FrameLayout pageHost;
@@ -52,8 +61,7 @@ public class MainActivity extends Activity {
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 if (device != null) addDevice(device, "נמצא בסריקה");
             } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
-                if (devices.isEmpty()) showEmptyState();
-                setStatus("הסריקה הסתיימה. נמצאו " + devices.size() + " מכשירים.");
+                finishScan();
             } else if (BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(action)) {
                 int bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE);
                 refreshPairedDevices();
@@ -308,12 +316,74 @@ public class MainActivity extends Activity {
                     return;
                 }
             }
+            stopBleScan();
+            scanHandler.removeCallbacks(scanTimeout);
             if(adapter.isDiscovering())adapter.cancelDiscovery();
             devices.clear(); deviceList.removeAllViews(); if(count!=null)count.setText("0");
-            setStatus("סורק מכשירים… השאירו את המסך פתוח"); adapter.startDiscovery();
+
+            boolean classicStarted = false;
+            boolean bleStarted = false;
+            try { classicStarted = adapter.startDiscovery(); }
+            catch (SecurityException ignored) { }
+
+            try {
+                bleScanner = adapter.getBluetoothLeScanner();
+                if (bleScanner != null) {
+                    bleScanCallback = new ScanCallback() {
+                        @Override public void onScanResult(int callbackType, ScanResult result) {
+                            if (result != null && result.getDevice() != null) addDevice(result.getDevice(), "נמצא בסריקת BLE");
+                        }
+                        @Override public void onBatchScanResults(java.util.List<ScanResult> results) {
+                            if (results != null) for (ScanResult result : results) {
+                                if (result != null && result.getDevice() != null) addDevice(result.getDevice(), "נמצא בסריקת BLE");
+                            }
+                        }
+                        @Override public void onScanFailed(int errorCode) {
+                            setStatus("סריקת BLE נכשלה (קוד " + errorCode + "). ממשיך בסריקה הרגילה.");
+                        }
+                    };
+                    bleScanner.startScan(bleScanCallback);
+                    bleStarted = true;
+                }
+            } catch (SecurityException e) {
+                stopBleScan();
+                setStatus("אין הרשאה לסריקת Bluetooth. בדקו את הרשאות האפליקציה.");
+            } catch (Exception e) {
+                stopBleScan();
+            }
+
+            if (!classicStarted && !bleStarted) {
+                showEmptyState();
+                setStatus("לא ניתן להתחיל סריקה. בדקו Bluetooth והרשאות.");
+                return;
+            }
+            scanHandler.postDelayed(scanTimeout, 15000);
+            setStatus("סורק מכשירי Bluetooth רגילים ו-BLE… השאירו את המסך פתוח.");
         }catch(SecurityException e){setStatus("אין הרשאה לסריקה. בדקו את הרשאות האפליקציה");}
         catch(Exception e){setStatus("הסריקה לא התחילה: "+e.getMessage());}
     }
+
+    private void stopBleScan() {
+        scanHandler.removeCallbacks(scanTimeout);
+        if (bleScanner != null && bleScanCallback != null) {
+            try { bleScanner.stopScan(bleScanCallback); }
+            catch (SecurityException ignored) { }
+            catch (Exception ignored) { }
+        }
+        bleScanCallback = null;
+        bleScanner = null;
+    }
+
+    private void finishScan() {
+        stopBleScan();
+        if (adapter != null && hasPermissions()) {
+            try { if (adapter.isDiscovering()) adapter.cancelDiscovery(); }
+            catch (SecurityException ignored) { }
+        }
+        if (devices.isEmpty()) showEmptyState();
+        setStatus("הסריקה הסתיימה. נמצאו " + devices.size() + " מכשירים.");
+    }
+
     private void refreshPairedDevices() {
         if(adapter==null){setStatus("אין תמיכה ב-Bluetooth במכשיר");return;}
         if(!hasPermissions()){requestBluetoothPermissions();return;}
@@ -479,6 +549,8 @@ public class MainActivity extends Activity {
     private int dp(int value){return (int)(value*getResources().getDisplayMetrics().density+0.5f);}
     @Override public void onBackPressed(){if(!"home".equals(currentPage))showPage("home");else super.onBackPressed();}
     @Override protected void onDestroy(){
+        scanHandler.removeCallbacks(scanTimeout);
+        stopBleScan();
         if(adapter!=null&&hasPermissions()){try{if(adapter.isDiscovering())adapter.cancelDiscovery();}catch(SecurityException ignored){}}
         if(receiverRegistered){try{unregisterReceiver(bluetoothReceiver);}catch(Exception ignored){}}
         super.onDestroy();
