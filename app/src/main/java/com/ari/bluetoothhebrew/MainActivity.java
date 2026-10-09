@@ -40,6 +40,9 @@ public class MainActivity extends Activity {
     private final Map<String,BluetoothDevice> devices = new LinkedHashMap<>();
     private boolean receiverRegistered = false;
     private String currentPage = "home";
+    private final Map<String,LinearLayout> navItems = new LinkedHashMap<>();
+    private final Map<String,TextView> navSymbols = new LinkedHashMap<>();
+    private final Map<String,TextView> navCaptions = new LinkedHashMap<>();
 
     private final BroadcastReceiver bluetoothReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -170,11 +173,12 @@ public class MainActivity extends Activity {
 
     private void addNavItem(LinearLayout nav,String icon,String label,String page) {
         LinearLayout item=new LinearLayout(this); item.setOrientation(LinearLayout.VERTICAL); item.setGravity(Gravity.CENTER);
-        item.setPadding(dp(3),dp(2),dp(3),dp(2));
-        TextView symbol=text(icon,21,BLUE,true); symbol.setGravity(Gravity.CENTER);
+        item.setPadding(dp(3),dp(3),dp(3),dp(3)); item.setBackground(round(Color.WHITE,16));
+        TextView symbol=text(icon,21,TEXT,true); symbol.setGravity(Gravity.CENTER);
         TextView caption=text(label,11,TEXT,true); caption.setGravity(Gravity.CENTER);
         item.addView(symbol); item.addView(caption);
         nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));
+        navItems.put(page,item); navSymbols.put(page,symbol); navCaptions.put(page,caption);
         item.setOnClickListener(v->showPage(page)); item.setClickable(true); item.setForeground(ripple());
     }
 
@@ -184,6 +188,12 @@ public class MainActivity extends Activity {
         devicesPage.setVisibility("devices".equals(page)?View.VISIBLE:View.GONE);
         sharePage.setVisibility("share".equals(page)?View.VISIBLE:View.GONE);
         settingsPage.setVisibility("settings".equals(page)?View.VISIBLE:View.GONE);
+        for (String key : navItems.keySet()) {
+            boolean selected = key.equals(page);
+            navItems.get(key).setBackground(round(selected ? Color.rgb(231,239,255) : Color.WHITE,16));
+            navSymbols.get(key).setTextColor(selected ? BLUE : TEXT);
+            navCaptions.get(key).setTextColor(selected ? BLUE : MUTED);
+        }
         if ("devices".equals(page) && deviceList!=null && devices.isEmpty()) refreshPairedDevices();
     }
 
@@ -349,8 +359,18 @@ public class MainActivity extends Activity {
     }
     private Button button(String label,boolean primary) {
         Button b=new Button(this); b.setText(label); b.setAllCaps(false); b.setTextSize(15); b.setTypeface(null,Typeface.BOLD);
-        b.setPadding(dp(12),dp(8),dp(12),dp(8)); b.setTextColor(primary?BLUE:Color.WHITE);
-        b.setBackground(round(primary?Color.WHITE:BLUE,14)); b.setMinHeight(dp(48)); b.setStateListAnimator(null); return b;
+        b.setPadding(dp(12),dp(8),dp(12),dp(8));
+        int normalBg = primary ? Color.WHITE : BLUE;
+        int pressedBg = primary ? BLUE : Color.WHITE;
+        int normalText = primary ? BLUE : Color.WHITE;
+        int pressedText = primary ? Color.WHITE : BLUE;
+        android.content.res.ColorStateList textStates = new android.content.res.ColorStateList(
+            new int[][] { new int[] { android.R.attr.state_pressed }, new int[] {} },
+            new int[] { pressedText, normalText });
+        android.graphics.drawable.StateListDrawable backgrounds = new android.graphics.drawable.StateListDrawable();
+        backgrounds.addState(new int[] { android.R.attr.state_pressed }, round(pressedBg,14));
+        backgrounds.addState(new int[] {}, round(normalBg,14));
+        b.setTextColor(textStates); b.setBackground(backgrounds); b.setMinHeight(dp(48)); b.setStateListAnimator(null); return b;
     }
     private GradientDrawable round(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
     private GradientDrawable gradient(int[] colors,int radius){GradientDrawable d=new GradientDrawable(GradientDrawable.Orientation.TL_BR,colors);d.setCornerRadius(dp(radius));return d;}
