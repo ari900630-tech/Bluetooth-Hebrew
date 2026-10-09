@@ -20,7 +20,7 @@
         <activity-alias
             android:name=".BluetoothShareTarget"
             android:targetActivity=".MainActivity"
-            android:label="Bluetooth — קבלת שיתוף"
+            android:label="Bluetooth — שליחה"
             android:icon="@drawable/ic_bluetooth_logo"
             android:exported="true">
             <intent-filter>
