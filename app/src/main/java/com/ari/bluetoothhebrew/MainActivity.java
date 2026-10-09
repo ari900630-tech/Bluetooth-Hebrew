@@ -10,6 +10,7 @@ import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.ContentUris;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
@@ -24,6 +25,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -36,7 +38,7 @@ import java.util.Map;
 import java.util.Set;
 
 public class MainActivity extends Activity {
-    private static final int REQ_PERMISSIONS = 210, REQ_ENABLE_BT = 211, REQ_FILE = 212, REQ_AUDIO = 213;
+    private static final int REQ_PERMISSIONS = 210, REQ_ENABLE_BT = 211, REQ_FILE = 212, REQ_AUDIO = 213, REQ_MUSIC_PERMISSION = 214;
     private static final int NAVY = Color.rgb(20,39,77), BLUE = Color.rgb(39,103,232);
     private static final int BG = Color.rgb(245,247,252), TEXT = Color.rgb(35,48,72), MUTED = Color.rgb(105,119,143);
     private BluetoothAdapter adapter;
@@ -50,6 +52,8 @@ public class MainActivity extends Activity {
     private Uri selectedAudioUri;
     private FrameLayout pageHost;
     private View homePage, devicesPage, sharePage, settingsPage, musicPage;
+    private LinearLayout songList;
+    private final java.util.List<Uri> songUris = new java.util.ArrayList<>();
     private final Map<String,BluetoothDevice> devices = new LinkedHashMap<>();
     private boolean receiverRegistered = false;
     private String currentPage = "home";
@@ -193,9 +197,13 @@ public class MainActivity extends Activity {
         musicTitle=text("לא נבחר שיר",18,NAVY,true); musicTitle.setGravity(Gravity.CENTER); player.addView(musicTitle);
         musicStatus=text("בחרו שיר מהטלפון כדי להתחיל",13,MUTED,false); musicStatus.setGravity(Gravity.CENTER); musicStatus.setPadding(0,dp(8),0,dp(16)); player.addView(musicStatus);
         Button choose=button("בחר שיר מהטלפון",false); player.addView(choose,matchWrap()); choose.setOnClickListener(v->chooseAudio());
+        Button refresh=button("רענן רשימת שירים",false); LinearLayout.LayoutParams refreshParams=matchWrap(); refreshParams.topMargin=dp(8); player.addView(refresh,refreshParams); refresh.setOnClickListener(v->loadSongsFromPhone());
         LinearLayout controls=new LinearLayout(this); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER); controls.setPadding(0,dp(12),0,0); player.addView(controls,matchWrap());
         Button play=button("▶  נגן / השהה",false); controls.addView(play,new LinearLayout.LayoutParams(0,dp(52),1)); play.setOnClickListener(v->togglePlayback());
         Button stop=button("■  עצור",false); LinearLayout.LayoutParams stopParams=new LinearLayout.LayoutParams(0,dp(52),1); stopParams.rightMargin=dp(8); controls.addView(stop,stopParams); stop.setOnClickListener(v->stopPlayback());
+        TextView songsHeading=text("השירים שבטלפון",18,NAVY,true); songsHeading.setPadding(0,dp(22),0,dp(10)); root.addView(songsHeading,matchWrap());
+        songList=new LinearLayout(this); songList.setOrientation(LinearLayout.VERTICAL); songList.setLayoutDirection(View.LAYOUT_DIRECTION_RTL); root.addView(songList,matchWrap());
+        TextView songHint=text("טוען את רשימת השירים…",13,MUTED,false); songHint.setPadding(0,dp(8),0,0); songList.addView(songHint,matchWrap());
         LinearLayout route=cardColumn(); LinearLayout.LayoutParams rp=matchWrap(); rp.topMargin=dp(14); root.addView(route,rp);
         route.addView(text("השמעה דרך Bluetooth",16,NAVY,true));
         TextView routeText=text("אפשר לשמוע דרך רמקול הטלפון, או לחבר אוזניות/רמקול Bluetooth בהגדרות Android. אם התקן Bluetooth מחובר לשמע, Android ינתב אליו את השיר.",13,MUTED,false);
@@ -205,6 +213,67 @@ public class MainActivity extends Activity {
         TextView note=text("הנגן משמיע קובצי שמע שנמצאים בטלפון. הוא אינו מוריד שירים ואינו כולל שירות מוזיקה מקוון.",12,MUTED,false);
         note.setPadding(0,dp(16),0,0); root.addView(note,matchWrap());
         scroll.addView(root); return scroll;
+    }
+
+    private void loadSongsFromPhone() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (checkSelfPermission("android.permission.READ_MEDIA_AUDIO") != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{"android.permission.READ_MEDIA_AUDIO"}, REQ_MUSIC_PERMISSION);
+                return;
+            }
+        } else if (Build.VERSION.SDK_INT >= 23) {
+            if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, REQ_MUSIC_PERMISSION);
+                return;
+            }
+        }
+        if (songList == null) return;
+        songList.removeAllViews();
+        songUris.clear();
+        String[] projection = {MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST};
+        String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0";
+        String sortOrder = MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC";
+        try (android.database.Cursor cursor = getContentResolver().query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, projection, selection, null, sortOrder)) {
+            if (cursor != null) {
+                int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
+                int titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE);
+                int artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST);
+                while (cursor.moveToNext()) {
+                    long id = cursor.getLong(idColumn);
+                    String title = cursor.getString(titleColumn);
+                    String artist = cursor.getString(artistColumn);
+                    Uri uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
+                    songUris.add(uri);
+                    LinearLayout row = cardColumn();
+                    LinearLayout.LayoutParams rowParams = matchWrap();
+                    rowParams.bottomMargin = dp(8);
+                    songList.addView(row, rowParams);
+                    row.setClickable(true);
+                    row.setForeground(ripple());
+                    row.addView(text("♫  " + (title == null || title.trim().isEmpty() ? "שיר ללא שם" : title), 15, NAVY, true));
+                    TextView artistView = text(artist == null || artist.trim().isEmpty() || "<unknown>".equalsIgnoreCase(artist) ? "אמן לא ידוע" : artist, 12, MUTED, false);
+                    artistView.setPadding(0, dp(5), 0, dp(8));
+                    row.addView(artistView);
+                    row.addView(text("לחצו כדי להשמיע", 12, BLUE, true));
+                    final Uri songUri = uri;
+                    row.setOnClickListener(v -> loadAudio(songUri));
+                }
+            }
+            if (songUris.isEmpty()) {
+                songList.addView(text("לא נמצאו שירים במכשיר. אפשר ללחוץ על ״בחר שיר מהטלפון״ כדי לבחור קובץ ידנית.", 13, MUTED, false), matchWrap());
+            } else {
+                TextView total = text("נמצאו " + songUris.size() + " שירים", 12, MUTED, false);
+                total.setPadding(0, 0, 0, dp(8));
+                songList.addView(total, 0);
+            }
+        } catch (SecurityException e) {
+            songList.removeAllViews();
+            songList.addView(text("אין הרשאה לקרוא את רשימת השירים. אפשר לאשר גישה לקובצי שמע בהגדרות האפליקציה.", 13, MUTED, false), matchWrap());
+        } catch (Exception e) {
+            songList.removeAllViews();
+            songList.addView(text("לא ניתן לטעון את רשימת השירים כרגע.", 13, MUTED, false), matchWrap());
+        }
     }
 
     private void chooseAudio() {
@@ -298,6 +367,7 @@ public class MainActivity extends Activity {
 
     private void showPage(String page) {
         currentPage=page;
+        if ("music".equals(page) && songList != null && songUris.isEmpty()) loadSongsFromPhone();
         homePage.setVisibility("home".equals(page)?View.VISIBLE:View.GONE);
         devicesPage.setVisibility("devices".equals(page)?View.VISIBLE:View.GONE);
         sharePage.setVisibility("share".equals(page)?View.VISIBLE:View.GONE);
@@ -392,6 +462,7 @@ public class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] results) {
         super.onRequestPermissionsResult(requestCode,permissions,results);
         if(requestCode==REQ_PERMISSIONS){if(hasPermissions())refreshPairedDevices();else setStatus("נדרשות הרשאות Bluetooth כדי לסרוק ולהציג מכשירים");}
+        else if(requestCode==REQ_MUSIC_PERMISSION){ boolean granted=results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED; if(granted)loadSongsFromPhone(); else if(songList!=null){songList.removeAllViews();songList.addView(text("כדי להציג את השירים שבטלפון צריך לאשר גישה לקובצי שמע.",13,MUTED,false),matchWrap());} }
     }
     private void enableBluetooth() {
         if(adapter==null){setStatus("אין תמיכה ב-Bluetooth במכשיר");return;}
