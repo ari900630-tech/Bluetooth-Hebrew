@@ -289,7 +289,7 @@ public class MainActivity extends Activity {
     }
     private void requestBluetoothPermissions() {
         if(Build.VERSION.SDK_INT>=31)requestPermissions(new String[]{Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT},REQ_PERMISSIONS);
-        else requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION},REQ_PERMISSIONS);
+        else requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION},REQ_PERMISSIONS);
     }
     @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] results) {
         super.onRequestPermissionsResult(requestCode,permissions,results);
